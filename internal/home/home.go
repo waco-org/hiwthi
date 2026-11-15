@@ -1,0 +1,55 @@
+// Package home applies a description to a home directory, one part at a
+// time.
+package home
+
+import (
+	"errors"
+	"fmt"
+	"io/fs"
+	"os"
+	"path/filepath"
+
+	"github.com/waco-org/hiwthi/internal/startup"
+)
+
+// ConfigDir is where Hiwthi keeps the files it owns, relative to the home.
+// Fixed, not $XDG_CONFIG_HOME: the marked lines name it.
+const ConfigDir = ".config/hiwthi"
+
+// Change is one file Hiwthi created or changed.
+type Change struct {
+	Path string // relative to the home
+	What string
+}
+
+// writeOwned writes one of the files Hiwthi owns in ConfigDir.
+func writeOwned(homeDir, name, content string) ([]Change, error) {
+	rel := filepath.Join(ConfigDir, name)
+	wrote, err := startup.WriteFile(filepath.Join(homeDir, rel), content, 0o644)
+	if err != nil || !wrote {
+		return nil, err
+	}
+	return []Change{{rel, "written"}}, nil
+}
+
+// hook makes sure the file rel, relative to the home, has Hiwthi's line.
+func hook(homeDir, rel string, l startup.Line, extra ...string) ([]Change, error) {
+	path := filepath.Join(homeDir, rel)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return nil, err
+	}
+	r, err := startup.Ensure(path, l, extra...)
+	if err != nil || r == startup.Unchanged {
+		return nil, err
+	}
+	return []Change{{rel, fmt.Sprintf("line %s", r)}}, nil
+}
+
+// exists tells whether path exists, a dangling symbolic link included.
+func exists(path string) (bool, error) {
+	_, err := os.Lstat(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return false, nil
+	}
+	return err == nil, err
+}
