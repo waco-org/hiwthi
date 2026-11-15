@@ -44,7 +44,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return runApply(args[1:], stdout, stderr)
 	case "config":
 		return runConfig(args[1:], stdout, stderr)
-	case "version":
+	case "version", "--version", "-version":
 		fmt.Fprintln(stdout, "hiwthi", version)
 		return 0
 	case "help", "-h", "-help", "--help":
