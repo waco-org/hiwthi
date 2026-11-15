@@ -2,7 +2,6 @@ package home
 
 import (
 	"errors"
-	"path/filepath"
 
 	"github.com/waco-org/hiwthi/internal/config"
 	"github.com/waco-org/hiwthi/internal/shell"
@@ -47,43 +46,48 @@ func ApplyShell(homeDir string, c *config.Config) ([]Change, error) {
 			return changes, err
 		}
 	}
-	add := func(rel string, l startup.Line, extra ...string) {
-		ch, err := hook(homeDir, rel, l, extra...)
+	for _, h := range shellHooks(c, inHome(homeDir)) {
+		ch, err := hook(homeDir, h)
 		changes = append(changes, ch...)
 		if err != nil {
 			errs = append(errs, err)
 		}
 	}
+	return changes, errors.Join(errs...)
+}
+
+// shellHooks plans the lines for the shells the description names. exists
+// tells whether a file, relative to the home, exists.
+func shellHooks(c *config.Config, exists func(string) bool) []hookSpec {
+	if c.Shell == nil {
+		return nil
+	}
 	envLine := startup.SourceLine(shell.EnvFile)
 	rcLine := startup.SourceLine(shell.InteractiveFile)
+	var hooks []hookSpec
 	for _, sh := range c.Shell.Shells {
 		switch sh {
 		case "bash":
-			login, err := bashLoginFile(homeDir)
-			if err != nil {
-				errs = append(errs, err)
-			} else if login == "" {
-				add(".bash_profile", envLine, bashrcFromProfile)
+			if login := bashLoginFile(exists); login == "" {
+				hooks = append(hooks, hookSpec{".bash_profile", envLine, []string{bashrcFromProfile}})
 			} else {
-				add(login, envLine)
+				hooks = append(hooks, hookSpec{login, envLine, nil})
 			}
-			add(".bashrc", rcLine)
+			hooks = append(hooks, hookSpec{".bashrc", rcLine, nil})
 		case "zsh":
-			add(".zshenv", envLine)
-			add(".zshrc", rcLine)
+			hooks = append(hooks, hookSpec{".zshenv", envLine, nil}, hookSpec{".zshrc", rcLine, nil})
 		}
 	}
-	return changes, errors.Join(errs...)
+	return hooks
 }
 
 // bashLoginFile returns the login file bash would read, or "" if none
 // exists.
-func bashLoginFile(homeDir string) (string, error) {
+func bashLoginFile(exists func(string) bool) string {
 	for _, name := range bashLoginFiles {
-		ok, err := exists(filepath.Join(homeDir, name))
-		if err != nil || ok {
-			return name, err
+		if exists(name) {
+			return name
 		}
 	}
-	return "", nil
+	return ""
 }

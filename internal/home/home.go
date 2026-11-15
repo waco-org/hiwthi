@@ -3,9 +3,7 @@
 package home
 
 import (
-	"errors"
 	"fmt"
-	"io/fs"
 	"os"
 	"path/filepath"
 
@@ -32,24 +30,31 @@ func writeOwned(homeDir, name, content string) ([]Change, error) {
 	return []Change{{rel, "written"}}, nil
 }
 
-// hook makes sure the file rel, relative to the home, has Hiwthi's line.
-func hook(homeDir, rel string, l startup.Line, extra ...string) ([]Change, error) {
-	path := filepath.Join(homeDir, rel)
+// hookSpec is one marked line to keep in a file Hiwthi doesn't own.
+type hookSpec struct {
+	rel   string // relative to the home
+	line  startup.Line
+	extra []string // written after the line when the file is created
+}
+
+// hook makes sure the file has Hiwthi's line.
+func hook(homeDir string, h hookSpec) ([]Change, error) {
+	path := filepath.Join(homeDir, h.rel)
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return nil, err
 	}
-	r, err := startup.Ensure(path, l, extra...)
+	r, err := startup.Ensure(path, h.line, h.extra...)
 	if err != nil || r == startup.Unchanged {
 		return nil, err
 	}
-	return []Change{{rel, fmt.Sprintf("line %s", r)}}, nil
+	return []Change{{h.rel, fmt.Sprintf("line %s", r)}}, nil
 }
 
-// exists tells whether path exists, a dangling symbolic link included.
-func exists(path string) (bool, error) {
-	_, err := os.Lstat(path)
-	if errors.Is(err, fs.ErrNotExist) {
-		return false, nil
+// inHome returns a function telling whether a file, relative to homeDir,
+// exists (a dangling symbolic link included).
+func inHome(homeDir string) func(string) bool {
+	return func(rel string) bool {
+		_, err := os.Lstat(filepath.Join(homeDir, rel))
+		return err == nil
 	}
-	return err == nil, err
 }

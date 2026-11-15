@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"time"
 
 	"go.yaml.in/yaml/v3"
 
@@ -22,7 +23,7 @@ Commands:
   init [-repo DIR] [-branch NAME] [-no-apply] URL
                       clone your Hiwthi repo (the branch for this kind of
                       machine), then apply it
-  apply [-repo DIR]   make the home match the description (so far: shell, identity)
+  apply [-repo DIR]   make the home match the description (so far: files/, shell, identity)
   config [-repo DIR]  show the merged description (common.yml + local.yml)
   version             show Hiwthi's version
 
@@ -135,9 +136,15 @@ func apply(repo string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "hiwthi:", err)
 		return 1
 	}
+	// files/ first: the other parts then find the startup files it brings.
+	backup := filepath.Join(home.BackupDir, time.Now().Format("20060102-150405"))
+	applyFiles := func(h string, c *config.Config) ([]home.Change, error) {
+		return home.ApplyFiles(h, repo, backup, c)
+	}
 	// Each part goes on when another fails: they touch different files.
 	status := 0
 	for _, part := range []func(string, *config.Config) ([]home.Change, error){
+		applyFiles,
 		home.ApplyShell,
 		home.ApplyIdentity,
 	} {
