@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -19,11 +20,16 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/transport/server"
 )
 
-// go-git serves local paths and file:// URLs by running the system's git;
-// its own server does the same in process, so no git is needed at all. Its
-// default loader only opens bare repositories, hence workTreeLoader.
+// go-git serves local paths and file:// URLs by running the system's git.
+// Where there is none, its own server does the same in process, so no git
+// is needed at all. That server is the fallback only: it fails ("object not
+// found") when a pull offers commits it doesn't have, so a diverged branch
+// isn't reported as such. Its default loader only opens bare repositories,
+// hence workTreeLoader.
 func init() {
-	client.InstallProtocol("file", server.NewServer(workTreeLoader{}))
+	if _, err := exec.LookPath("git"); err != nil {
+		client.InstallProtocol("file", server.NewServer(workTreeLoader{}))
+	}
 }
 
 // workTreeLoader opens a repository for go-git's server: the .git directory
@@ -116,4 +122,51 @@ func hint(url string, err error) string {
 		return "\n(is your key in the agent (ssh-add -l) and registered with the server?)"
 	}
 	return ""
+}
+
+// Pull brings the clone in dir up to date with its remote: the branch
+// checked out, fast-forward only. It tells whether anything changed. Local
+// changes, committed or not, stop it: they are the user's to sort out with
+// git.
+func Pull(dir string, output io.Writer) (bool, error) {
+	r, err := git.PlainOpen(dir)
+	if err != nil {
+		return false, fmt.Errorf("%s: %w", dir, err)
+	}
+	head, err := r.Head()
+	if err != nil {
+		return false, fmt.Errorf("%s: %w", dir, err)
+	}
+	if !head.Name().IsBranch() {
+		return false, fmt.Errorf("%s: no branch checked out (detached HEAD)", dir)
+	}
+	wt, err := r.Worktree()
+	if err != nil {
+		return false, err
+	}
+	status, err := wt.Status()
+	if err != nil {
+		return false, err
+	}
+	if !status.IsClean() {
+		return false, fmt.Errorf("%s has uncommitted changes: commit or discard them first", dir)
+	}
+
+	url := ""
+	if origin, err := r.Remote("origin"); err == nil && len(origin.Config().URLs) > 0 {
+		url = origin.Config().URLs[0]
+	}
+	// Without ReferenceName go-git pulls the remote's default branch, not
+	// the one checked out.
+	err = wt.Pull(&git.PullOptions{ReferenceName: head.Name(), Progress: output})
+	switch {
+	case errors.Is(err, git.NoErrAlreadyUpToDate):
+		return false, nil
+	case errors.Is(err, git.ErrNonFastForwardUpdate):
+		return false, fmt.Errorf("%s: branch %s has commits the remote doesn't: "+
+			"push or merge them with git first", dir, head.Name().Short())
+	case err != nil:
+		return false, fmt.Errorf("pulling %s: %w%s", url, err, hint(url, err))
+	}
+	return true, nil
 }

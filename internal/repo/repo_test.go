@@ -3,6 +3,7 @@ package repo
 import (
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -135,5 +136,104 @@ func TestHint(t *testing.T) {
 	}
 	if h := hint("https://github.com/me/home.git", err); h != "" {
 		t.Errorf("hint for https = %q", h)
+	}
+}
+
+// commitIn adds a file to the repo at dir on its current branch.
+func commitIn(t *testing.T, dir, name, content string) {
+	t.Helper()
+	r, err := git.PlainOpen(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wt, err := r.Worktree()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := wt.Add(name); err != nil {
+		t.Fatal(err)
+	}
+	sig := &object.Signature{Name: "Test", Email: "test@example.org", When: time.Now()}
+	if _, err := wt.Commit("add "+name, &git.CommitOptions{Author: sig}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func checkout(t *testing.T, dir, branch string) {
+	t.Helper()
+	r, err := git.PlainOpen(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wt, err := r.Worktree()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := wt.Checkout(&git.CheckoutOptions{Branch: plumbing.NewBranchReferenceName(branch)}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func cloned(t *testing.T, src, branch string) string {
+	t.Helper()
+	dir := filepath.Join(t.TempDir(), "repo")
+	if err := Clone(CloneOptions{URL: src, Dir: dir, Branch: branch}); err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
+func TestPullUpToDate(t *testing.T) {
+	dir := cloned(t, source(t), "")
+	if changed, err := Pull(dir, nil); err != nil || changed {
+		t.Errorf("Pull = %v, %v; want false, nil", changed, err)
+	}
+}
+
+// The branch checked out is pulled, not the remote's default one.
+func TestPullFollowsBranch(t *testing.T) {
+	src := source(t)
+	dir := cloned(t, src, "laptop")
+	commitIn(t, src, "on-main", "x") // src has main checked out
+	checkout(t, src, "laptop")
+	commitIn(t, src, "on-laptop", "x")
+	checkout(t, src, "main")
+
+	if changed, err := Pull(dir, nil); err != nil || !changed {
+		t.Fatalf("Pull = %v, %v; want true, nil", changed, err)
+	}
+	if !exists(filepath.Join(dir, "on-laptop")) {
+		t.Error("laptop's new commit missing")
+	}
+	if exists(filepath.Join(dir, "on-main")) {
+		t.Error("main's commit pulled into laptop")
+	}
+}
+
+func TestPullRefusesUncommittedChanges(t *testing.T) {
+	src := source(t)
+	dir := cloned(t, src, "")
+	commitIn(t, src, "new", "x")
+	if err := os.WriteFile(filepath.Join(dir, "common.yml"), []byte("hiwthi: 1\n# edited\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Pull(dir, nil); err == nil || !strings.Contains(err.Error(), "uncommitted") {
+		t.Errorf("err = %v, want uncommitted changes", err)
+	}
+}
+
+func TestPullRefusesDivergence(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("go-git's in-process server, used without git, reports divergence as \"object not found\"")
+	}
+	src := source(t)
+	dir := cloned(t, src, "")
+	commitIn(t, src, "theirs", "x")
+	commitIn(t, dir, "mine", "y")
+	if _, err := Pull(dir, nil); err == nil || !strings.Contains(err.Error(), "push or merge") {
+		t.Errorf("err = %v, want a divergence error", err)
 	}
 }
