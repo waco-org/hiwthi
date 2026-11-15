@@ -2,6 +2,7 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -12,18 +13,22 @@ import (
 
 	"github.com/waco-org/hiwthi/internal/config"
 	"github.com/waco-org/hiwthi/internal/home"
+	"github.com/waco-org/hiwthi/internal/repo"
 )
 
 const usage = `Usage: hiwthi <command> [options]
 
 Commands:
+  init [-repo DIR] [-branch NAME] [-no-apply] URL
+                      clone your Hiwthi repo (the branch for this kind of
+                      machine), then apply it
   apply [-repo DIR]   make the home match the description (so far: shell, identity)
   config [-repo DIR]  show the merged description (common.yml + local.yml)
   version             show Hiwthi's version
 
 DIR defaults to ~/.local/share/hiwthi/repo.
 
-Planned: init, update, diff, check, capture.
+Planned: update, diff, check, capture.
 `
 
 // version is set at build time with -ldflags "-X main.version=...".
@@ -40,6 +45,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 	switch args[0] {
+	case "init":
+		return runInit(args[1:], stdout, stderr)
 	case "apply":
 		return runApply(args[1:], stdout, stderr)
 	case "config":
@@ -113,6 +120,11 @@ func runApply(args []string, stdout, stderr io.Writer) int {
 	if !ok {
 		return 2
 	}
+	return apply(repo, stdout, stderr)
+}
+
+// apply makes the home match the description in repo.
+func apply(repo string, stdout, stderr io.Writer) int {
 	c, err := config.Load(repo)
 	if err != nil {
 		fmt.Fprintln(stderr, "hiwthi:", err)
@@ -139,4 +151,51 @@ func runApply(args []string, stdout, stderr io.Writer) int {
 		}
 	}
 	return status
+}
+
+func runInit(args []string, stdout, stderr io.Writer) int {
+	flags := flag.NewFlagSet("init", flag.ContinueOnError)
+	flags.SetOutput(stderr)
+	dir := flags.String("repo", "", "where to clone (default ~/"+defaultRepo+")")
+	branch := flags.String("branch", "", "the branch to check out (default: the remote's)")
+	noApply := flags.Bool("no-apply", false, "clone only, don't apply")
+	// Options may also come after the URL: parse again after it.
+	var urls []string
+	for {
+		if err := flags.Parse(args); err != nil {
+			return 2
+		}
+		if flags.NArg() == 0 {
+			break
+		}
+		urls = append(urls, flags.Arg(0))
+		args = flags.Args()[1:]
+	}
+	if len(urls) != 1 {
+		fmt.Fprintln(stderr, "hiwthi init: expected one URL, your Hiwthi repo")
+		return 2
+	}
+	if *dir == "" {
+		h, err := os.UserHomeDir()
+		if err != nil {
+			fmt.Fprintln(stderr, "hiwthi:", err)
+			return 1
+		}
+		*dir = filepath.Join(h, defaultRepo)
+	}
+
+	err := repo.Clone(repo.CloneOptions{URL: urls[0], Dir: *dir, Branch: *branch, Output: stderr})
+	switch {
+	case errors.Is(err, repo.ErrAlreadyCloned):
+		fmt.Fprintf(stdout, "%s already holds %s\n", *dir, urls[0])
+	case err != nil:
+		fmt.Fprintln(stderr, "hiwthi:", err)
+		return 1
+	default:
+		fmt.Fprintf(stdout, "cloned %s into %s\n", urls[0], *dir)
+	}
+	if *noApply {
+		return 0
+	}
+	return apply(*dir, stdout, stderr)
 }
