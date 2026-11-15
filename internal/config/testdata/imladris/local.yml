@@ -1,0 +1,15 @@
+---
+# Hiwthi: draft, 2026-11-14, revised 2026-11-15. Not a working format yet.
+#
+# What this branch adds to common.yml: a kind of system, or one machine.
+# Committed like common.yml ("local" to the branch, not an untracked file).
+# Same names as in common.yml. A single value here replaces common.yml's, a
+# list is added to common.yml's (duplicates dropped) and a dictionary is merged key by key. The prototype
+# ships it empty, so merges from it never conflict.
+
+# imladris: the dock on the HDMI monitor.
+gnome:
+  settings:
+    org.gnome.shell.extensions.dash-to-dock:
+      preferred-monitor: -2
+      preferred-monitor-by-connector: HDMI-1

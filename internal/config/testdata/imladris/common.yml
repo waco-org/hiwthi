@@ -1,0 +1,137 @@
+---
+# Hiwthi: draft, 2026-11-14, revised 2026-11-15. Not a working format yet.
+#
+# Settings every home made from this repo gets. What a branch (a kind of
+# system) or one machine adds goes in local.yml. Filled in from the POC
+# (a home on imladris); the prototype would ship this file with every
+# section empty or commented out.
+#
+# There are no conditionals: settings for tools that aren't available are
+# skipped silently (`hiwthi apply --verbose` warns about them). Plain
+# dotfiles go in files/, copied as they are; files ending in .age are
+# decrypted on the way, if this machine has the key.
+
+hiwthi: 1
+
+# Written into the configuration of git and Mercurial, if installed.
+identity:
+  name: Test User
+  email: test@example.org
+
+shell:
+  # Shells Hiwthi hooks into (one marked line in each startup file).
+  shells: [bash, zsh]
+  editing_mode: vi            # bash: set -o vi; zsh: bindkey -v
+  # Added to PATH in this order, ahead of the system's. Directories that
+  # don't exist when the shell starts are left out.
+  path:
+    - ~/.local/bin
+    - ~/bin
+    - ~/.cargo/bin
+  # Added after the system's.
+  path_append:
+    - /opt/bin
+    - ~/.local/share/JetBrains/Toolbox/scripts
+  # Values starting with / or ~ that don't exist when the shell starts are
+  # left out, as for path.
+  environment:
+    JAVA_HOME: /etc/alternatives/java_sdk
+  aliases: {}
+  # Lines with no setting here (zsh's setopt COMPLETE_IN_WORD) go in
+  # files/.config/hiwthi/local.zsh or local.bash, sourced last.
+
+# Per-user tools through mise, with their versions. Hiwthi adds mise's
+# activation to the shells when this isn't empty.
+tools:
+  gh: latest
+  glab: latest
+  typst: latest
+  claude: latest
+  rust: stable
+
+# Through uv.
+python:
+  versions: ["3.10", "3.11", "3.12", "3.13", "3.14", "3.15"]
+  tools: [tox]
+
+# Per-user, from Flathub.
+flatpaks:
+  - org.freac.freac
+
+gnome:
+  # Enabled for this user. Those not installed system-wide are installed
+  # per user from extensions.gnome.org, in the build for the GNOME present.
+  extensions:
+    - apps-menu@gnome-shell-extensions.gcampax.github.com
+    - places-menu@gnome-shell-extensions.gcampax.github.com
+    - workspace-indicator@gnome-shell-extensions.gcampax.github.com
+    - user-theme@gnome-shell-extensions.gcampax.github.com
+    - background-logo@fedorahosted.org
+    - dash-to-dock@micxgx.gmail.com
+    - appindicatorsupport@rgcjonas.gmail.com
+    - no-overview@fthx
+  favorites:
+    - firefox.desktop
+    - thunderbird.desktop
+    - org.gnome.Nautilus.desktop
+    - org.gnome.Ptyxis.desktop
+    - gvim.desktop
+    - org.gnome.Meld.desktop
+    - io.github.quodlibet.QuodLibet.desktop
+    - org.freac.freac.desktop
+    - com.spotify.Client.desktop
+    - grsync.desktop
+    - org.musicbrainz.Picard.desktop
+    - org.videolan.VLC.desktop
+    - com.microsoft.VSCode.desktop
+  autostart:
+    - firefox.desktop
+    - thunderbird.desktop
+  # Applications by MIME type or URL scheme.
+  default_apps:
+    thunderbird.desktop: [text/calendar, x-scheme-handler/mailto]
+    gvim.desktop: [text/x-maven+xml]
+    io.github.quodlibet.QuodLibet.desktop: [
+      audio/aac, audio/aiff, audio/dsf, audio/midi, audio/mp3, audio/mp4,
+      audio/mpeg, audio/mpeg4, audio/mpg, audio/ogg, audio/vorbis, audio/wav,
+      audio/wave, audio/x-aac, audio/x-aiff, audio/x-flac, audio/x-m4a,
+      audio/x-midi, audio/x-mp3, audio/x-mpc, audio/x-mpeg, audio/x-ms-wma,
+      audio/x-ms-wmv, audio/x-musepack, audio/x-oggflac, audio/x-speex,
+      audio/x-tta, audio/x-vorbis+ogg, audio/x-wav, audio/x-wavpack, audio/x-wma]
+  # By schema and key, as gsettings names them. Values in plain YAML; Hiwthi
+  # converts them with the key's type from the installed schema, and skips
+  # schemas and keys this GNOME doesn't have.
+  settings:
+    org.gnome.desktop.interface:
+      enable-hot-corners: false
+      font-antialiasing: grayscale
+      font-hinting: slight
+    org.gnome.desktop.input-sources:
+      per-window: true
+      sources: [[xkb, us+alt-intl], [xkb, it], [xkb, us+intl]]
+      xkb-options: []
+    org.gnome.desktop.peripherals.keyboard:
+      numlock-state: true
+    org.gnome.desktop.wm.preferences:
+      button-layout: "appmenu:minimize,maximize,close"
+      num-workspaces: 6
+    org.gnome.mutter:
+      attach-modal-dialogs: false
+      dynamic-workspaces: false
+      edge-tiling: false
+    org.gnome.shell.extensions.dash-to-dock:
+      background-opacity: 0.8
+      dash-max-icon-size: 48
+      dock-position: BOTTOM
+      height-fraction: 0.9
+      intellihide-mode: FOCUS_APPLICATION_WINDOWS
+      require-pressure-to-show: false
+      show-favorites: true
+      show-mounts: false
+      show-running: true
+      show-windows-preview: false
+    org.gnome.nautilus.preferences:
+      default-folder-viewer: list-view
+      search-filter-time-type: last_modified
+    org.gnome.nautilus.list-view:
+      use-tree-view: true
