@@ -1,28 +1,13 @@
-// Package home applies a description to a home directory, one part at a
-// time.
 package home
 
 import (
 	"errors"
-	"fmt"
-	"io/fs"
-	"os"
 	"path/filepath"
 
 	"github.com/waco-org/hiwthi/internal/config"
 	"github.com/waco-org/hiwthi/internal/shell"
 	"github.com/waco-org/hiwthi/internal/startup"
 )
-
-// ConfigDir is where Hiwthi keeps the files it owns, relative to the home.
-// Fixed, not $XDG_CONFIG_HOME: the marked lines name it.
-const ConfigDir = ".config/hiwthi"
-
-// Change is one file Hiwthi created or changed.
-type Change struct {
-	Path string // relative to the home
-	What string
-}
 
 // bashLoginFiles are the files a bash login shell reads, in bash's order: it
 // reads only the first that exists. Hiwthi hooks into that one, so on
@@ -51,29 +36,22 @@ func ApplyShell(homeDir string, c *config.Config) ([]Change, error) {
 	}
 
 	var changes []Change
+	var errs []error
 	for _, f := range []struct{ name, content string }{
 		{shell.EnvFile, env},
 		{shell.InteractiveFile, interactive},
 	} {
-		rel := filepath.Join(ConfigDir, f.name)
-		wrote, err := startup.WriteFile(filepath.Join(homeDir, rel), f.content, 0o644)
+		ch, err := writeOwned(homeDir, f.name, f.content)
+		changes = append(changes, ch...)
 		if err != nil {
 			return changes, err
 		}
-		if wrote {
-			changes = append(changes, Change{rel, "written"})
-		}
 	}
-
-	var errs []error
-	hook := func(rel string, l startup.Line, extra ...string) {
-		r, err := startup.Ensure(filepath.Join(homeDir, rel), l, extra...)
+	add := func(rel string, l startup.Line, extra ...string) {
+		ch, err := hook(homeDir, rel, l, extra...)
+		changes = append(changes, ch...)
 		if err != nil {
 			errs = append(errs, err)
-			return
-		}
-		if r != startup.Unchanged {
-			changes = append(changes, Change{rel, fmt.Sprintf("line %s", r)})
 		}
 	}
 	envLine := startup.SourceLine(shell.EnvFile)
@@ -85,14 +63,14 @@ func ApplyShell(homeDir string, c *config.Config) ([]Change, error) {
 			if err != nil {
 				errs = append(errs, err)
 			} else if login == "" {
-				hook(".bash_profile", envLine, bashrcFromProfile)
+				add(".bash_profile", envLine, bashrcFromProfile)
 			} else {
-				hook(login, envLine)
+				add(login, envLine)
 			}
-			hook(".bashrc", rcLine)
+			add(".bashrc", rcLine)
 		case "zsh":
-			hook(".zshenv", envLine)
-			hook(".zshrc", rcLine)
+			add(".zshenv", envLine)
+			add(".zshrc", rcLine)
 		}
 	}
 	return changes, errors.Join(errs...)
@@ -102,12 +80,9 @@ func ApplyShell(homeDir string, c *config.Config) ([]Change, error) {
 // exists.
 func bashLoginFile(homeDir string) (string, error) {
 	for _, name := range bashLoginFiles {
-		_, err := os.Lstat(filepath.Join(homeDir, name))
-		if err == nil {
-			return name, nil
-		}
-		if !errors.Is(err, fs.ErrNotExist) {
-			return "", err
+		ok, err := exists(filepath.Join(homeDir, name))
+		if err != nil || ok {
+			return name, err
 		}
 	}
 	return "", nil

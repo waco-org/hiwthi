@@ -17,7 +17,7 @@ import (
 const usage = `Usage: hiwthi <command> [options]
 
 Commands:
-  apply [-repo DIR]   make the home match the description (so far: the shell)
+  apply [-repo DIR]   make the home match the description (so far: shell, identity)
   config [-repo DIR]  show the merged description (common.yml + local.yml)
   version             show Hiwthi's version
 
@@ -123,13 +123,20 @@ func runApply(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "hiwthi:", err)
 		return 1
 	}
-	changes, err := home.ApplyShell(h, c)
-	for _, ch := range changes {
-		fmt.Fprintf(stdout, "~/%s: %s\n", ch.Path, ch.What)
+	// Each part goes on when another fails: they touch different files.
+	status := 0
+	for _, part := range []func(string, *config.Config) ([]home.Change, error){
+		home.ApplyShell,
+		home.ApplyIdentity,
+	} {
+		changes, err := part(h, c)
+		for _, ch := range changes {
+			fmt.Fprintf(stdout, "~/%s: %s\n", ch.Path, ch.What)
+		}
+		if err != nil {
+			fmt.Fprintln(stderr, "hiwthi:", err)
+			status = 1
+		}
 	}
-	if err != nil {
-		fmt.Fprintln(stderr, "hiwthi:", err)
-		return 1
-	}
-	return 0
+	return status
 }

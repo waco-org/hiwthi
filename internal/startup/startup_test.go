@@ -136,3 +136,40 @@ func TestWriteFileOnlyWhenDifferent(t *testing.T) {
 		}
 	}
 }
+
+func TestGitIncludeAddsHeader(t *testing.T) {
+	path := filepath.Join(t.TempDir(), ".gitconfig")
+	if err := os.WriteFile(path, []byte("[core]\n\teditor = vim\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	l := GitInclude("gitconfig")
+	if r, err := Ensure(path, l); err != nil || r != Added {
+		t.Fatalf("Ensure: %v %v", r, err)
+	}
+	got, _ := os.ReadFile(path)
+	want := "[core]\n\teditor = vim\n\n" + Comment + "\n[include]\n\tpath = ~/.config/hiwthi/gitconfig\n"
+	if string(got) != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+func TestIndentationIsTheUsers(t *testing.T) {
+	path := filepath.Join(t.TempDir(), ".gitconfig")
+	before := "[include]\n    path = ~/.config/hiwthi/gitconfig\n"
+	if err := os.WriteFile(path, []byte(before), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if r, err := Ensure(path, GitInclude("gitconfig")); err != nil || r != Unchanged {
+		t.Errorf("got %v %v, want unchanged", r, err)
+	}
+}
+
+func TestSemicolonCommentsDontCount(t *testing.T) {
+	path := filepath.Join(t.TempDir(), ".hgrc")
+	if err := os.WriteFile(path, []byte("; %include ~/.config/hiwthi/hgrc\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if r, err := Ensure(path, HgInclude("hgrc")); err != nil || r != Added {
+		t.Errorf("got %v %v, want added", r, err)
+	}
+}

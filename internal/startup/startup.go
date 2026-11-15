@@ -35,10 +35,34 @@ func (r Result) String() string {
 var ErrSeveral = errors.New("more than one line points at")
 
 // Line is one marked line: Target is the file under ~/.config/hiwthi it
-// points to ("env.sh"), Text the whole line Hiwthi writes.
+// points to ("env.sh"), Text the whole line Hiwthi writes. Header, if set,
+// is written before the line when Hiwthi adds it (gitconfig's "[include]").
 type Line struct {
 	Target string
 	Text   string
+	Header string
+}
+
+// added is what Ensure writes when the line is missing.
+func (l Line) added() string {
+	s := Comment + "\n"
+	if l.Header != "" {
+		s += l.Header + "\n"
+	}
+	return s + l.Text + "\n"
+}
+
+// GitInclude is the include of ~/.config/hiwthi/<target> in a git
+// configuration file.
+func GitInclude(target string) Line {
+	return Line{Target: target, Header: "[include]",
+		Text: "\tpath = ~/.config/hiwthi/" + target}
+}
+
+// HgInclude is the include of ~/.config/hiwthi/<target> in a Mercurial
+// configuration file.
+func HgInclude(target string) Line {
+	return Line{Target: target, Text: "%include ~/.config/hiwthi/" + target}
 }
 
 // SourceLine is the line that sources ~/.config/hiwthi/<target> from a shell
@@ -49,11 +73,12 @@ func SourceLine(target string) Line {
 }
 
 // matches tells whether a line of a file is Hiwthi's line for target.
-// Comments don't count, so the comment above the line, or a line the user
+// Comments (# in all the files Hiwthi touches, also ; in git's and
+// Mercurial's) don't count, so the comment above the line, or a line the user
 // commented out, isn't taken for it.
 func matches(line, target string) bool {
 	t := strings.TrimSpace(line)
-	if strings.HasPrefix(t, "#") {
+	if strings.HasPrefix(t, "#") || strings.HasPrefix(t, ";") {
 		return false
 	}
 	return strings.Contains(t, ".config/hiwthi/"+target)
@@ -73,7 +98,7 @@ func Ensure(path string, l Line, extra ...string) (Result, error) {
 
 	data, err := os.ReadFile(real)
 	if errors.Is(err, fs.ErrNotExist) {
-		content := Comment + "\n" + l.Text + "\n"
+		content := l.added()
 		for _, e := range extra {
 			content += e + "\n"
 		}
@@ -105,9 +130,10 @@ func Ensure(path string, l Line, extra ...string) (Result, error) {
 		if text != "" && !strings.HasSuffix(text, "\n") {
 			text += "\n"
 		}
-		text += "\n" + Comment + "\n" + l.Text + "\n"
+		text += "\n" + l.added()
 		result = Added
-	case strings.TrimRight(lines[found], "\r\n") == l.Text:
+	case strings.TrimSpace(lines[found]) == strings.TrimSpace(l.Text):
+		// Indentation is the user's business.
 		return Unchanged, nil
 	default:
 		ending := lines[found][len(strings.TrimRight(lines[found], "\r\n")):]
