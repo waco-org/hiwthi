@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
-	"path/filepath"
 	"strings"
 
 	"github.com/waco-org/hiwthi/internal/config"
@@ -49,16 +48,8 @@ func ApplyIdentity(homeDir string, c *config.Config) ([]Change, error) {
 
 	var changes []Change
 	var errs []error
-	tools := []struct {
-		command, target, content string
-		files                    []string
-		line                     startup.Line
-	}{
-		{"git", GitFile, gitIdentity(id), gitFiles, startup.GitInclude(GitFile)},
-		{"hg", HgFile, hgIdentity(id), hgFiles, startup.HgInclude(HgFile)},
-	}
-	for _, t := range tools {
-		if _, err := lookPath(t.command); err != nil {
+	for _, t := range identityTools(id) {
+		if !installed(t.command) {
 			continue // not installed: skipped silently
 		}
 		ch, err := writeOwned(homeDir, t.target, t.content)
@@ -67,18 +58,60 @@ func ApplyIdentity(homeDir string, c *config.Config) ([]Change, error) {
 			errs = append(errs, err)
 			continue
 		}
-		file, err := firstExisting(homeDir, t.files)
-		if err != nil {
-			errs = append(errs, err)
-			continue
-		}
-		ch, err = hook(homeDir, file, t.line)
+		ch, err = hook(homeDir, t.hook(inHome(homeDir)))
 		changes = append(changes, ch...)
 		if err != nil {
 			errs = append(errs, err)
 		}
 	}
 	return changes, errors.Join(errs...)
+}
+
+// identityTool is what Hiwthi writes for one of git and Mercurial.
+type identityTool struct {
+	command, target, content string
+	files                    []string // the tool's files in the home, the traditional one first
+	line                     startup.Line
+}
+
+// hook plans the include line: in the first of the tool's files that
+// exists, or the traditional one.
+func (t identityTool) hook(exists func(string) bool) hookSpec {
+	file := t.files[0]
+	for _, f := range t.files {
+		if exists(f) {
+			file = f
+			break
+		}
+	}
+	return hookSpec{file, t.line, nil}
+}
+
+func identityTools(id *config.Identity) []identityTool {
+	return []identityTool{
+		{"git", GitFile, gitIdentity(id), gitFiles, startup.GitInclude(GitFile)},
+		{"hg", HgFile, hgIdentity(id), hgFiles, startup.HgInclude(HgFile)},
+	}
+}
+
+// identityHooks plans the include lines, for the tools installed.
+func identityHooks(c *config.Config, exists func(string) bool) []hookSpec {
+	id := c.Identity
+	if id == nil || (id.Name == "" && id.Email == "") {
+		return nil
+	}
+	var hooks []hookSpec
+	for _, t := range identityTools(id) {
+		if installed(t.command) {
+			hooks = append(hooks, t.hook(exists))
+		}
+	}
+	return hooks
+}
+
+func installed(command string) bool {
+	_, err := lookPath(command)
+	return err == nil
 }
 
 func gitIdentity(id *config.Identity) string {
@@ -111,16 +144,4 @@ func hgIdentity(id *config.Identity) string {
 	}
 	// Mercurial takes the rest of the line as it is: nothing to quote.
 	return identityHeader + "\n[ui]\nusername = " + user + "\n"
-}
-
-// firstExisting returns the first of files (relative to the home) that
-// exists, or the first one if none does.
-func firstExisting(homeDir string, files []string) (string, error) {
-	for _, f := range files {
-		ok, err := exists(filepath.Join(homeDir, f))
-		if err != nil || ok {
-			return f, err
-		}
-	}
-	return files[0], nil
 }

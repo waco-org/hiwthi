@@ -3,12 +3,14 @@ module github.com/waco-org/hiwthi
 go 1.26.0
 
 require (
+	filippo.io/age v1.3.2
 	github.com/go-git/go-git/v5 v5.19.3
 	go.yaml.in/yaml/v3 v3.0.6
 )
 
 require (
 	dario.cat/mergo v1.0.0 // indirect
+	filippo.io/hpke v0.4.0 // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/ProtonMail/go-crypto v1.1.6 // indirect
 	github.com/cloudflare/circl v1.6.3 // indirect

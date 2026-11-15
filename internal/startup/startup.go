@@ -96,60 +96,70 @@ func Ensure(path string, l Line, extra ...string) (Result, error) {
 		return Unchanged, err
 	}
 
+	perm := fs.FileMode(0o644)
 	data, err := os.ReadFile(real)
-	if errors.Is(err, fs.ErrNotExist) {
+	missing := errors.Is(err, fs.ErrNotExist)
+	if err != nil && !missing {
+		return Unchanged, err
+	}
+	if !missing {
+		info, err := os.Stat(real)
+		if err != nil {
+			return Unchanged, err
+		}
+		perm = info.Mode().Perm()
+	}
+	text, result, err := EnsureText(string(data), missing, l, extra...)
+	if err != nil {
+		return Unchanged, fmt.Errorf("%s: %w", path, err)
+	}
+	if result == Unchanged {
+		return Unchanged, nil
+	}
+	if err := writeFile(real, text, perm); err != nil {
+		return Unchanged, err
+	}
+	return result, nil
+}
+
+// EnsureText is Ensure on a file's content: it returns text with l.Text
+// exactly once. missing says the file doesn't exist (text is then empty); it
+// gets the line and extra.
+func EnsureText(text string, missing bool, l Line, extra ...string) (string, Result, error) {
+	if missing {
 		content := l.added()
 		for _, e := range extra {
 			content += e + "\n"
 		}
-		if err := writeFile(real, content, 0o644); err != nil {
-			return Unchanged, err
-		}
-		return Created, nil
-	}
-	if err != nil {
-		return Unchanged, err
+		return content, Created, nil
 	}
 
-	text := string(data)
 	lines := strings.SplitAfter(text, "\n")
 	found := -1
 	for i, line := range lines {
 		if matches(line, l.Target) {
 			if found >= 0 {
-				return Unchanged, fmt.Errorf("%s: %w ~/.config/hiwthi/%s (lines %d and %d)",
-					path, ErrSeveral, l.Target, found+1, i+1)
+				return text, Unchanged, fmt.Errorf("%w ~/.config/hiwthi/%s (lines %d and %d)",
+					ErrSeveral, l.Target, found+1, i+1)
 			}
 			found = i
 		}
 	}
 
-	var result Result
 	switch {
 	case found < 0:
 		if text != "" && !strings.HasSuffix(text, "\n") {
 			text += "\n"
 		}
-		text += "\n" + l.added()
-		result = Added
+		return text + "\n" + l.added(), Added, nil
 	case strings.TrimSpace(lines[found]) == strings.TrimSpace(l.Text):
 		// Indentation is the user's business.
-		return Unchanged, nil
+		return text, Unchanged, nil
 	default:
 		ending := lines[found][len(strings.TrimRight(lines[found], "\r\n")):]
 		lines[found] = l.Text + ending
-		text = strings.Join(lines, "")
-		result = Replaced
+		return strings.Join(lines, ""), Replaced, nil
 	}
-
-	info, err := os.Stat(real)
-	if err != nil {
-		return Unchanged, err
-	}
-	if err := writeFile(real, text, info.Mode().Perm()); err != nil {
-		return Unchanged, err
-	}
-	return result, nil
 }
 
 // WriteFile writes content to path if it differs from what is there,
