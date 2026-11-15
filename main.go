@@ -23,13 +23,14 @@ Commands:
   init [-repo DIR] [-branch NAME] [-no-apply] URL
                       clone your Hiwthi repo (the branch for this kind of
                       machine), then apply it
+  update [-repo DIR]  pull your repo (fast-forward only), then apply it
   apply [-repo DIR]   make the home match the description (so far: files/, shell, identity)
   config [-repo DIR]  show the merged description (common.yml + local.yml)
   version             show Hiwthi's version
 
 DIR defaults to ~/.local/share/hiwthi/repo.
 
-Planned: update, diff, check, capture.
+Planned: diff, check, capture.
 `
 
 // version is set at build time with -ldflags "-X main.version=...".
@@ -48,6 +49,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 	switch args[0] {
 	case "init":
 		return runInit(args[1:], stdout, stderr)
+	case "update":
+		return runUpdate(args[1:], stdout, stderr)
 	case "apply":
 		return runApply(args[1:], stdout, stderr)
 	case "config":
@@ -122,6 +125,23 @@ func runApply(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 	return apply(repo, stdout, stderr)
+}
+
+func runUpdate(args []string, stdout, stderr io.Writer) int {
+	dir, ok := parseRepo("update", args, stderr)
+	if !ok {
+		return 2
+	}
+	changed, err := repo.Pull(dir, stderr)
+	if err != nil {
+		fmt.Fprintln(stderr, "hiwthi:", err)
+		return 1
+	}
+	if !changed {
+		fmt.Fprintln(stdout, "repo already up to date")
+	}
+	// Applied either way: the home may have drifted since the last apply.
+	return apply(dir, stdout, stderr)
 }
 
 // apply makes the home match the description in repo.
