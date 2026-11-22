@@ -15,7 +15,7 @@ but doesn't need it.
 - Commands (planned): `hiwthi init <repo>`, `apply`, `update`, `diff`, `check`,
   `capture`.
 
-Design and decisions: [hiwthi-conversation](https://github.com/waco-org/hiwthi-conversation).
+Design notes are kept in a separate, private repo for now.
 
 ## Licence
 
