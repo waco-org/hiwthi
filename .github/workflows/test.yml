@@ -1,0 +1,53 @@
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+name: test
+
+permissions:
+  contents: read
+
+env:
+  # Build with the Go that setup-go installs, as RHEL's golang does
+  # (go.mod targets a Go the supported distros ship).
+  GOTOOLCHAIN: local
+  CGO_ENABLED: "0"
+
+jobs:
+  test:
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-latest, macos-latest]
+        # The oldest Go go.mod allows, and the newest.
+        go: ["1.26.x", "stable"]
+    name: ${{ matrix.runner }} go${{ matrix.go }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: ${{ matrix.go }}
+      - name: gofmt
+        run: test -z "$(gofmt -l . | tee /dev/stderr)"
+      - run: go vet ./...
+      - run: go test ./...
+
+  # Windows isn't supported yet: check that it still compiles, along with
+  # the release targets.
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [linux/amd64, linux/arm64, darwin/arm64, windows/amd64]
+    name: build ${{ matrix.target }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: "1.26.x"
+      - run: GOOS=${TARGET%/*} GOARCH=${TARGET#*/} go build -ldflags=-s -o /dev/null .
+        env:
+          TARGET: ${{ matrix.target }}
